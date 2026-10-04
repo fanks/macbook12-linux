@@ -2,7 +2,7 @@
 
 Simple setup guides and reversible fixes for the **2017 12-inch MacBook (`MacBook10,1`) running Debian 13 with GNOME**.
 
-Get the speakers, Bluetooth and suspend working, add familiar Command-key shortcuts, and tune the trackpad with a small native app.
+Get the speakers, Bluetooth and suspend working, use familiar macOS Command-key combinations on Linux, and tune the trackpad to feel more like macOS (OS X). Cmd-Space opens GNOME search using the same shortcut as Spotlight on a Mac.
 
 These fixes were developed and tested on that model. The 2015 (`MacBook8,1`) and 2016 (`MacBook9,1`) models are **not yet supported by these installers**. This repository is not for MacBook Air or MacBook Pro.
 
@@ -34,12 +34,14 @@ These fixes were developed and tested on that model. The 2015 (`MacBook8,1`) and
 | Built-in speakers and volume | [Audio](docs/audio.md) | Shut down and power on |
 | Bluetooth controller | [Bluetooth](docs/bluetooth.md) | Shut down and power on |
 | Sleep and wake, including the lid | [Suspend](docs/suspend.md) | Reboot for the documented boot parameters |
-| Cmd-X/C/V/N/T/W/Q and Cmd-Space | [Keyboard](docs/keyboard.md) | Reboot to refresh group membership |
-| Precise slow movement, faster swipes | [Trackpad Curve](docs/trackpad.md) | Sign out and in once |
+| macOS-style Cmd shortcuts and Spotlight-style Cmd-Space search | [Keyboard](docs/keyboard.md) | Reboot to refresh group membership |
+| macOS-style trackpad feel: precise aiming and fast swipes | [Trackpad Curve](docs/trackpad.md) | Sign out and in once |
 
 Each guide includes installation, a quick check and removal. Apply one feature at a time so you can tell what changed. The scripts do not reboot, log you out, suspend the machine or reload audio drivers automatically.
 
 ## Trackpad Curve
+
+Trackpad Curve helps the trackpad feel more like it does in macOS (OS X), with precise slow movement and more cursor travel during fast swipes.
 
 Drag a point or move a slider, then press **Apply**. Adjust slow aiming, everyday movement and fast swipes independently. **Undo** restores the previous change; **Reset** previews the starting curve.
 

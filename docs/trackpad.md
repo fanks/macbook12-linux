@@ -1,6 +1,6 @@
 # Trackpad Curve
 
-A small native GNOME app for precise slow movements and longer fast swipes. Supports the **2017 MacBook10,1, Debian 13, GNOME 48 on Wayland and libinput 1.28.1**.
+A small native GNOME app for making the trackpad feel more like it does in macOS (OS X): precise during slow movements, with more cursor travel during fast swipes. Supports the **2017 MacBook10,1, Debian 13, GNOME 48 on Wayland and libinput 1.28.1**.
 
 ## Install
 

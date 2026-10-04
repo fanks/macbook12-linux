@@ -1,5 +1,7 @@
 # Mac-style shortcuts on GNOME
 
+These tweaks let you use familiar Mac Command-key combinations on Linux for cutting, copying, pasting, opening and closing tabs and windows, and quitting apps. **Cmd-Space** opens GNOME’s overview/search, similar to how the same shortcut opens Spotlight on macOS.
+
 For **MacBook10,1 (12-inch, 2017), Debian 13, GNOME Shell 48 on Wayland and Debian keyd 2.5.0**. The installer checks these versions; other models are untested.
 
 Open Terminal in your normal GNOME session, enter the repository directory, and run:
@@ -27,7 +29,7 @@ The installer never reboots automatically. Alternatively, log out of GNOME and e
 | Cmd-T / W | New tab / close tab | New tab / close tab |
 | Cmd-N | Ask the focused app for a new window | Same |
 | Cmd-Q | Ask the focused app to quit normally | Same |
-| Cmd-Space | Overview/search | Same |
+| Cmd-Space | GNOME overview/search, using the Spotlight shortcut | Same |
 | Cmd alone | No overview action | Same |
 
 Both Cmd keys work. Existing Ctrl shortcuts remain, including Terminal's Ctrl-C. X/C/V/T/W become Ctrl shortcuts, or Ctrl-Shift shortcuts in Terminal. Applications control tab behavior and unsaved-work prompts. New windows need not inherit the current folder or browser profile; Quit follows GNOME's application grouping.
