@@ -1,0 +1,23 @@
+name: Setup problem
+description: Report a problem with a setup step or the trackpad app.
+body:
+  - type: textarea
+    id: system
+    attributes:
+      label: System
+      description: Paste scripts/check-system.py output. Do not include serial numbers or device addresses.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What happened?
+      description: Include the feature, command, expected result, error, and whether this was a fresh install or update.
+    validations:
+      required: true
+  - type: textarea
+    id: recovery
+    attributes:
+      label: Recovery or workaround
+      description: Did the documented uninstall or recovery steps work?

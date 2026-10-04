@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+*.so
+*.ko
+*.o
+*.deb
+*.tar.*
+*.log
+.DS_Store
+build/
+qa-output/
+.venv/
+*.swp

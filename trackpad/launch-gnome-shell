@@ -1,0 +1,18 @@
+#!/bin/sh
+# The loader option affects GNOME Shell only, not programs it starts.
+base=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd) || exec /usr/bin/gnome-shell "$@"
+version=$(/usr/bin/dpkg-query -W -f='${Version}' libinput10:amd64 2>/dev/null)
+shell_version=$(/usr/bin/dpkg-query -W -f='${Version}' gnome-shell 2>/dev/null)
+model=$(/usr/bin/cat /sys/class/dmi/id/product_name 2>/dev/null)
+profile=$(/usr/bin/gsettings get org.gnome.desktop.peripherals.touchpad accel-profile 2>/dev/null)
+case "$version:$shell_version:$model" in
+    1.28.1-*:48.*:MacBook10,1)
+        if [ -r "$base/curve.conf" ] && [ -r "$base/libmacbook-trackpad.so" ] &&
+           [ ! -e "$base/disabled" ] && [ "$profile" != "'flat'" ]; then
+            export MACBOOK_TRACKPAD_DIR="$base"
+            exec /usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2 \
+                --preload "$base/libmacbook-trackpad.so" /usr/bin/gnome-shell "$@"
+        fi
+        ;;
+esac
+exec /usr/bin/gnome-shell "$@"

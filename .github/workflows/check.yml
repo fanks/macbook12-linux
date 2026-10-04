@@ -1,0 +1,26 @@
+name: Checks
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  debian:
+    runs-on: ubuntu-latest
+    container: debian:13-slim
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install test dependencies
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends build-essential libinput-dev python3 \
+            python3-gi python3-gi-cairo gir1.2-gtk-4.0 gir1.2-adw-1 shellcheck \
+            nodejs libglib2.0-bin xvfb xauth dbus-daemon ca-certificates
+      - name: Test scripts, curve calculations and native interface
+        run: bash scripts/check.sh

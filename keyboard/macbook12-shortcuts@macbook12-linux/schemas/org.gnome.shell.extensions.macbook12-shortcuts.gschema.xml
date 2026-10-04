@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist>
+  <schema id="org.gnome.shell.extensions.macbook12-shortcuts"
+          path="/org/gnome/shell/extensions/macbook12-shortcuts/">
+    <key name="macbook12-new-window" type="as">
+      <default>['&lt;Super&gt;n']</default>
+      <summary>Open a new window of the focused application</summary>
+    </key>
+    <key name="macbook12-quit-application" type="as">
+      <default>['&lt;Super&gt;q']</default>
+      <summary>Request a normal quit of the focused application</summary>
+    </key>
+  </schema>
+</schemalist>

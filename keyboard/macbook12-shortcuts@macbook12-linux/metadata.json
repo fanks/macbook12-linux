@@ -1,0 +1,8 @@
+{
+  "uuid": "macbook12-shortcuts@macbook12-linux",
+  "name": "MacBook12 shortcuts",
+  "description": "Focused-app Cmd clipboard/tab shortcuts and native new-window/quit actions.",
+  "shell-version": ["48"],
+  "settings-schema": "org.gnome.shell.extensions.macbook12-shortcuts",
+  "version": 1
+}
