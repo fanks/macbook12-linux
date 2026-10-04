@@ -1,6 +1,6 @@
 #!/bin/sh
 # The loader option affects GNOME Shell only, not programs it starts.
-base=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd) || exec /usr/bin/gnome-shell "$@"
+base=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd) || exec /usr/bin/gnome-shell "$@"
 version=$(/usr/bin/dpkg-query -W -f='${Version}' libinput10:amd64 2>/dev/null)
 shell_version=$(/usr/bin/dpkg-query -W -f='${Version}' gnome-shell 2>/dev/null)
 model=$(/usr/bin/cat /sys/class/dmi/id/product_name 2>/dev/null)

@@ -6,6 +6,9 @@ python3 -m compileall -q scripts trackpad tests
 python3 -m unittest discover -s trackpad -p 'test_*.py' -q
 python3 -m unittest discover -s tests -p 'test_*.py' -q
 python3 tests/check_repository.py
+mkdir -p build
+cc -shared -fPIC -O2 -Wall -Wextra -Werror -Wl,-z,relro,-z,now \
+    -o build/libmacbook-trackpad.so trackpad/curve.c -ldl -pthread
 python3 tests/check_curve_math.py
 while IFS= read -r -d '' script; do
     bash -n "$script"
