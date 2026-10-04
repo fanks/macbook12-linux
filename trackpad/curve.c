@@ -79,6 +79,46 @@ static FILE *open_config(bool medium)
 #endif
 }
 
+static const double curve_speeds[4] = {10.0, 100.0, 400.0, 520.0};
+
+static void spline_slopes(const double *values, double *slopes)
+{
+    /* PCHIP's weighted harmonic interior slopes preserve ordered gains.
+     * Flat endpoints join the slow precision region and bounded tail with
+     * continuous first derivatives. Match backend.py's operation order.
+     */
+    double widths[3], secants[3];
+    for (size_t i = 0; i < 3; i++) {
+        widths[i] = curve_speeds[i + 1] - curve_speeds[i];
+        secants[i] = (values[i + 1] - values[i]) / widths[i];
+    }
+    slopes[0] = slopes[1] = slopes[2] = slopes[3] = 0.0;
+    for (size_t i = 1; i < 3; i++) {
+        double left = secants[i - 1], right = secants[i];
+        if (left > 0 && right > 0) {
+            double w1 = 2.0 * widths[i] + widths[i - 1];
+            double w2 = widths[i] + 2.0 * widths[i - 1];
+            slopes[i] = (w1 + w2) / (w1 / left + w2 / right);
+        }
+    }
+}
+
+static double spline_factor(double v, const double *values, const double *slopes)
+{
+    if (v <= curve_speeds[0]) return values[0];
+    if (v >= curve_speeds[3]) return values[3];
+    size_t i = v < curve_speeds[1] ? 0 : v < curve_speeds[2] ? 1 : 2;
+    double h = curve_speeds[i + 1] - curve_speeds[i];
+    double t = (v - curve_speeds[i]) / h;
+    double delta = values[i + 1] - values[i];
+    double left = h * slopes[i], right = h * slopes[i + 1];
+    double value = values[i] + t * (left + t * (3.0 * delta - 2.0 * left - right + t * (left + right - 2.0 * delta)));
+    /* Bound only floating-point roundoff at the interval endpoints. */
+    if (value < values[i]) value = values[i];
+    if (value > values[i + 1]) value = values[i + 1];
+    return value;
+}
+
 static bool make_curve(double *motion, double *constant, double *slow, double *boost, double *medium)
 {
     FILE *f = open_config(false);
@@ -98,38 +138,17 @@ static bool make_curve(double *motion, double *constant, double *slow, double *b
         fclose(f);
         if (count != 1) return false;
     } else if (errno != ENOENT) return false;
-    /* 1.8 keeps output monotonic across the full slow/fast range. */
     if (!isfinite(*medium) || *medium < 1.0 || *medium > 1.8) return false;
 
     const double base = 0.2968 * 1000.0 / DPI;
+    const double values[4] = {*slow, 0.9 * *medium, (387.0 / 130.0) * *boost, 4.8 * *boost};
+    double slopes[4];
+    spline_slopes(values, slopes);
     constant[0] = 0;
     constant[1] = 0.9 * base; /* Same flat scroll/fallback gain as adaptive. */
     for (size_t i = 0; i < NPOINTS; i++) {
         double v = i * 10.0; /* Physical finger speed in mm/s. */
-        double factor;
-        if (v <= 10) factor = *slow;
-        else if (v < 30) factor = *slow + (0.9 - *slow) * (v - 10) / 20;
-        else {
-            double capped = v < 520 ? v : 520;
-            factor = capped < 130 ? 0.9 :
-                0.0025 * (capped / 130) * (capped - 130) + 0.9;
-            double t = (v - 100) / 160;
-            if (t < 0) t = 0;
-            if (t > 1) t = 1;
-            factor *= 1 + (*boost - 1) * t * t * (3 - 2 * t);
-        }
-        /* More middle travel, with the accepted slow and fast endpoints intact. */
-        double weight = 0;
-        if (v > 30 && v < 60) {
-            double t = (v - 30) / 30;
-            weight = t * t * (3 - 2 * t);
-        } else if (v >= 60 && v <= 160) {
-            weight = 1;
-        } else if (v > 160 && v < 260) {
-            double t = (v - 160) / 100;
-            weight = 1 - t * t * (3 - 2 * t);
-        }
-        factor *= 1 + (*medium - 1) * weight;
+        double factor = spline_factor(v, values, slopes);
         double input = v * DPI / 25400.0; /* libinput filter counts/ms. */
         motion[i] = input * base * factor; /* API takes output speed. */
         if (!isfinite(motion[i]) || motion[i] < 0 || motion[i] > 10000 ||

@@ -42,6 +42,8 @@ The installer compiles the small support library locally, installs the app for y
 
 These settings aim for a Mac-like balance of precision and reach. They do not reproduce Apple's acceleration algorithm. Once the custom curve is active, use this app to change its shape; GNOME's ordinary speed slider does not control it.
 
+Smooth transitions connect the three controls without dips or overshoot. The chart shows the same sampled curve that controls the pointer.
+
 ## Update
 
 From the repository folder:
@@ -51,7 +53,7 @@ git pull --ff-only
 python3 scripts/trackpad.py install
 ```
 
-Close the app first if it is open. The update preserves the saved curve, fixed baseline and Undo history, and refuses to overwrite manually edited installed files. Sign out and back in to load a replaced support library. Higher settings cannot be applied until the matching new library is loaded.
+Close the app first if it is open. The update preserves your saved settings, fixed baseline and Undo history, and refuses to overwrite manually edited installed files. **Sign out and back in after every update** to load the new support library. You can preview curves before signing out, but Apply and Undo to a saved curve wait until the matching library is active, even for ordinary settings. Updating from the older formula keeps your slider values and gives them the new smooth transitions.
 
 ## Check or remove
 
@@ -85,6 +87,8 @@ Then restart the computer normally. This removes only this project's GNOME overr
 The per-user GNOME service runs through a small wrapper. It uses the dynamic loader's `--preload` option for **GNOME Shell only**, without exporting `LD_PRELOAD` to applications or changing `/etc/ld.so.preload`. The wrapper falls back to the standard GNOME executable if the model or software version is unsupported, the configuration is missing, or the `disabled` marker exists.
 
 The library configures only the Apple SPI Touchpad (`06cb:0417`) through libinput's public custom-acceleration API. It does not read, grab or log input events. Scroll/fallback scaling is kept constant. The app checks the running GNOME process, the loaded library identity and confirmation in its journal before reporting a curve as active.
+
+The response uses a shape-preserving cubic Hermite spline with PCHIP interior slopes. Very slow movement (up to 10 mm/s), the medium and fast control points, and the maximum gain retain their previous values. The speeds between them use the new gradual transitions. Flat endpoint slopes join the precision region and capped fast response smoothly. Libinput uses 64 samples with linear interpolation, so the applied response is a close approximation of the spline; the chart displays that approximation.
 
 The app stores slow/fast factors in `curve.conf`, medium in `medium.conf`, and its baseline/Undo records alongside them. File writes are atomic and competing edits are detected. The library is replaced with a new file on upgrades, never overwritten while mapped into GNOME.
 

@@ -115,7 +115,7 @@ def install():
             BASE / 'libmacbook-trackpad.so': (library.read_bytes(), 0o644),
             BASE / 'curve.c': ((SOURCE / 'curve.c').read_bytes(), 0o644),
             BASE / 'launch-gnome-shell': ((SOURCE / 'launch-gnome-shell').read_bytes(), 0o700),
-            BASE / 'support.json': ((json.dumps({'curve_version': 2, 'sha256': digest(library.read_bytes())})+'\n').encode(), 0o600),
+            BASE / 'support.json': ((json.dumps({'curve_version': 3, 'sha256': digest(library.read_bytes())})+'\n').encode(), 0o600),
             DROPIN: (f'[Service]\nExecStart=\nExecStart={BASE}/launch-gnome-shell\n'.encode(), 0o644),
             COMMAND: (f'#!/bin/sh\nexport MACBOOK_TRACKPAD_DIR="{BASE}"\nexec /usr/bin/python3 "{BASE}/tuner/app.py" "$@"\n'.encode(), 0o755),
             DESKTOP: (f'[Desktop Entry]\nType=Application\nName=Trackpad Curve\nComment=Fine-tune trackpad acceleration\nExec={COMMAND}\nIcon=input-touchpad-symbolic\nTerminal=false\nCategories=Settings;HardwareSettings;\nStartupNotify=true\n'.encode(), 0o644),
@@ -174,7 +174,8 @@ def install():
                 raise
     print('Installed. Save your work, sign out and back in once, then run:')
     print(f'  {COMMAND}')
-    print('Future Apply changes take effect immediately. Re-running install updates the app and keeps your curve.')
+    print('After each install or update, sign out and back in before applying any curve changes.')
+    print('Then Apply takes effect immediately. Updates keep your saved settings, baseline and Undo history.')
 
 
 def uninstall():

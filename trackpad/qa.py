@@ -1,9 +1,11 @@
 """Render and exercise the real GTK UI against an in-memory backend only."""
+from collections import Counter
 import json
 import sys
 from pathlib import Path
 from types import SimpleNamespace
 
+import cairo
 import app
 from gi.repository import GLib, Gtk, Graphene
 
@@ -49,6 +51,27 @@ out.mkdir(exist_ok=True, parents=True)
 backend = TestBackend()
 application = app.TunerApplication(backend, unique=False)
 failures = []
+captures = {}
+COMPACT_SIZE = (440, 600)
+
+
+def check_png_content(path):
+    """A successful PNG write does not guarantee GTK painted its children."""
+    surface = cairo.ImageSurface.create_from_png(str(path))
+    assert surface.get_format() in (cairo.FORMAT_ARGB32, cairo.FORMAT_RGB24)
+    surface.flush()
+    width, height, stride = surface.get_width(), surface.get_height(), surface.get_stride()
+    pixels = surface.get_data()
+    # Ignore row padding. Counting complete pixels works with native-endian
+    # RGB24/ARGB32 and catches the uniform image returned by broken renderers.
+    colors = Counter(bytes(pixels[y * stride + x * 4:y * stride + x * 4 + 4])
+                     for y in range(height) for x in range(width))
+    distinct = len(colors)
+    varied_fraction = 1 - colors.most_common(1)[0][1] / (width * height)
+    assert distinct >= 32 and varied_fraction >= .02, (
+        f'{path.name}: blank or incomplete render '
+        f'({distinct} colors, {varied_fraction:.1%} pixels differ from the background)')
+    return {'distinct_colors': distinct, 'varied_pixel_fraction': varied_fraction}
 
 
 def capture(window, name):
@@ -65,6 +88,7 @@ def capture(window, name):
     renderer = window.get_renderer()
     texture = renderer.render_texture(node, None)
     assert texture.save_to_png(str(out / name))
+    captures[name] = check_png_content(out / name)
 
 
 def check(fn):
@@ -153,12 +177,17 @@ def undone():
         x, y = window.preview.xy(speed, gain)
         assert 0 <= x <= window.preview.get_width()
         assert 0 <= y <= window.preview.get_height() - 27
-    window.set_default_size(440, 600)
+    window.set_default_size(*COMPACT_SIZE)
     GLib.timeout_add(500, check, finish)
 
 
 def finish():
     window = application.window
+    actual_size = (window.get_width(), window.get_height())
+    # GTK may subtract its frame/shadow from the reported content allocation.
+    # Require a genuinely compact layout within the app's supported minimum.
+    assert 420 <= actual_size[0] <= COMPACT_SIZE[0] and 520 <= actual_size[1] <= COMPACT_SIZE[1], (
+        f'Compact layout was not tested: requested {COMPACT_SIZE}, got {actual_size}')
     capture(window, 'trackpad-compact-draft.png')
     (out / 'ui-results.json').write_text(json.dumps({
         'opening_preserves_settings': True, 'sliders_are_preview_only': True,
@@ -167,7 +196,7 @@ def finish():
         'drag_all_points': True, 'drag_clamps_to_limits': True,
         'drag_preserves_other_values': True, 'drag_is_preview_only': True,
         'drag_and_sliders_agree': True, 'expanded_curve_fits_chart': True,
-        'compact_window': [window.get_width(), window.get_height()],
+        'compact_window': list(actual_size), 'captures': captures,
     }, indent=2) + '\n')
     application.quit()
 

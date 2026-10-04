@@ -71,6 +71,18 @@ def main():
             assert all(math.isfinite(y) and 0 <= y <= 10000 for y in py), name
             increments = [b-a for a, b in zip(py, py[1:])]
             assert min(increments) > 0, name
+            gains = [output / (i * 10.) for i, output in enumerate(py) if i]
+            assert all(a <= b or math.isclose(a, b, rel_tol=2e-15)
+                       for a, b in zip(gains, gains[1:])), (name, "gain decreased")
+            # Independent anchor requirements; these also cover the C samples
+            # because exact binary equality with Python was checked above.
+            for speed, factor in ((10, py_curve.slow), (100, .9 * py_curve.medium),
+                                  (400, (387 / 130) * py_curve.fast), (520, 4.8 * py_curve.fast)):
+                expected_output = speed * .2968 / 25.4 * factor
+                assert math.isclose(py[speed // 10], expected_output, rel_tol=2e-15), (name, speed)
+            assert all(math.isclose(output / (i * 10.), 4.8 * py_curve.fast * .2968 / 25.4,
+                                    rel_tol=2e-15)
+                       for i, output in enumerate(py) if i >= 52), (name, "tail gain changed")
             assert math.isclose(py[-1] / 630., py[-2] / 620., rel_tol=1e-15), name
             min_increment = min(min_increment, *increments)
             max_output = max(max_output, *py)

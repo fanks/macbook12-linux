@@ -30,6 +30,8 @@ class Desktop:
         self.no_log = False
         self.pid = "1234"
         (base / "libmacbook-trackpad.so").write_bytes(b"test library")
+        (base / "support.json").write_text(json.dumps({
+            "curve_version": 3, "sha256": hashlib.sha256(b"test library").hexdigest()}))
         (proc / self.pid).mkdir(parents=True)
         self.mapping()
 
@@ -106,19 +108,20 @@ class BackendTests(unittest.TestCase):
             with self.assertRaises(BackendError):
                 c.validate()
         for slow, medium, fast in itertools.product((.3, .5, .9), (1, 1.25, 1.5, 1.8), (1, 1.92, 2, 4)):
-            points = Backend.propose(Curve(slow, medium, fast))
-            self.assertEqual(len(points), 64)
-            self.assertTrue(all(math.isfinite(p[1]) for p in points))
-            self.assertTrue(all(a[1] <= b[1] for a, b in zip(points, points[1:])))
-        plain = Backend.propose(Curve(.5, 1, 1.92))
-        middle = Backend.propose(ORIGINAL)
-        for i in range(64):
-            if i <= 3 or i >= 26:
-                self.assertEqual(plain[i], middle[i])
-        self.assertAlmostEqual(middle[10][1] / plain[10][1], 1.25)
-        # Independent fixed values at slow and plateau boundaries.
-        self.assertAlmostEqual(plain[1][1], 10 * .2968 / 25.4 * .5)
-        self.assertAlmostEqual(middle[6][1], 60 * .2968 / 25.4 * .9 * 1.25)
+            with self.subTest(slow=slow, medium=medium, fast=fast):
+                points = Backend.propose(Curve(slow, medium, fast))
+                self.assertEqual(tuple(x for x, _ in points), tuple(range(0, 640, 10)))
+                self.assertEqual(points[0][1], 0.)
+                self.assertTrue(all(math.isfinite(y) for _, y in points))
+                self.assertTrue(all(a[1] < b[1] for a, b in zip(points, points[1:])))
+                gains = [y / x for x, y in points[1:]]
+                self.assertTrue(all(a <= b or math.isclose(a, b, rel_tol=2e-15)
+                                    for a, b in zip(gains, gains[1:])))
+                # Independent response requirements at each draggable point.
+                for speed, factor in ((10, slow), (100, .9 * medium),
+                                      (400, (387 / 130) * fast), (520, 4.8 * fast)):
+                    self.assertAlmostEqual(points[speed // 10][1],
+                                           speed * .2968 / 25.4 * factor, places=12)
 
     def test_apply_and_persistent_undo_preserve_exact_files_and_speed(self):
         before = self.backend.read()
@@ -247,11 +250,13 @@ class BackendTests(unittest.TestCase):
 
     def test_support_hash_comes_from_local_build_manifest(self):
         path = self.base / 'support.json'
+        path.unlink()
         self.assertIsNone(self.backend._support_hash())
         digest = hashlib.sha256(b'locally built binary').hexdigest()
-        path.write_text(json.dumps({'curve_version': 2, 'sha256': digest}))
+        path.write_text(json.dumps({'curve_version': 3, 'sha256': digest}))
         self.assertEqual(self.backend._support_hash(), digest)
-        for value in ({'curve_version': 1, 'sha256': digest}, {'curve_version': 2, 'sha256': 'bad'}, {}):
+        for value in ({'curve_version': 1, 'sha256': digest}, {'curve_version': 2, 'sha256': digest},
+                      {'curve_version': 3, 'sha256': 'bad'}, {}, None, []):
             path.write_text(json.dumps(value))
             self.assertIsNone(self.backend._support_hash())
 
@@ -271,12 +276,14 @@ class BackendTests(unittest.TestCase):
 
     def test_saved_without_loaded_library_requires_sign_out(self):
         self.desktop.mapping(deleted=True)
-        result = self.backend.apply(CHANGED, expected=self.backend.read())
-        self.assertEqual(result.status, "sign_out_required")
-        self.assertEqual(self.backend.read().curve, CHANGED)
+        before = self.backend.read()
+        with self.assertRaisesRegex(BackendError, "Sign out and back in once"):
+            self.backend.apply(CHANGED, expected=before)
+        self.assertEqual(self.backend.read(), before)
+        self.assertEqual(self.backend.status().status, "sign_out_required")
         self.assertFalse(any("logout" in " ".join(c) for c in self.desktop.calls))
 
-    def test_expanded_apply_rejects_unsupported_mapping_without_mutations(self):
+    def test_all_apply_values_reject_unsupported_mapping_without_mutations(self):
         self.backend.apply(CHANGED, expected=self.backend.read())
         before = self.backend.read()
         undo = (self.base / "tuner-undo.json").read_bytes()
@@ -284,13 +291,13 @@ class BackendTests(unittest.TestCase):
         library = self.base / "libmacbook-trackpad.so"
         maps = self.proc / self.desktop.pid / "maps"
         digest = hashlib.sha256(b"test library").hexdigest()
-        for expanded in (Curve(.5, 1.8, 2), Curve(.5, 1.5, 4)):
-            for variant in ("deleted", "inode", "device", "path", "maps missing", "library missing", "hash", "pin missing"):
-                with self.subTest(curve=expanded, variant=variant):
+        for curve in (ORIGINAL, CHANGED, Curve(.5, 1.8, 2), Curve(.5, 1.5, 4)):
+            for variant in ("deleted", "inode", "device", "path", "maps missing", "library missing", "hash", "pin missing", "old version"):
+                with self.subTest(curve=curve, variant=variant):
                     library.write_bytes(b"test library")
                     self.desktop.mapping()
                     parts = maps.read_text().split(None, 5)
-                    pin = digest
+                    support = {"curve_version": 3, "sha256": digest}
                     if variant == "deleted":
                         self.desktop.mapping(deleted=True)
                     elif variant == "inode":
@@ -308,13 +315,15 @@ class BackendTests(unittest.TestCase):
                         library.unlink()
                     elif variant == "hash":
                         # Even a correctly mapped old binary is insufficient.
-                        pin = "0" * 64
+                        support["sha256"] = "0" * 64
                     elif variant == "pin missing":
-                        pin = None
+                        support = {}
+                    elif variant == "old version":
+                        support["curve_version"] = 2
+                    (self.base / "support.json").write_text(json.dumps(support))
                     calls = len(self.desktop.calls)
-                    with patch.object(self.backend, "_support_hash", return_value=pin):
-                        with self.assertRaisesRegex(BackendError, "Sign out and back in once"):
-                            self.backend.apply(expanded, expected=before)
+                    with self.assertRaisesRegex(BackendError, "Sign out and back in once"):
+                        self.backend.apply(curve, expected=before)
                     self.assertEqual(self.backend.read(), before)
                     self.assertEqual((self.base / "tuner-undo.json").read_bytes(), undo)
                     self.assertEqual(self.desktop.settings, settings)
@@ -328,31 +337,42 @@ class BackendTests(unittest.TestCase):
         self.assertEqual(result.snapshot.curve, expanded)
         self.assertEqual(result.status, "active")
 
-    def test_legacy_limits_remain_usable_while_new_library_is_pending(self):
+    def test_read_and_preview_remain_available_while_new_library_is_pending(self):
         self.desktop.mapping(deleted=True)
         with patch.object(self.backend, "_support_hash", return_value=None):
-            result = self.backend.apply(Curve(.5, 1.5, 2), expected=self.backend.read())
-        self.assertEqual(result.snapshot.curve, Curve(.5, 1.5, 2))
-        self.assertEqual(result.status, "sign_out_required")
+            self.assertEqual(self.backend.read().curve, ORIGINAL)
+            self.assertEqual(len(self.backend.propose(Curve(.5, 1.5, 2))), 64)
+            self.assertEqual(self.backend.status().status, "sign_out_required")
+        self.assertFalse(any(c[:2] == ["gsettings", "set"] for c in self.desktop.calls))
 
-    def test_expanded_undo_rejects_pending_library_and_retains_backup(self):
+    def test_all_undo_values_reject_pending_library_and_retain_backup(self):
+        for restored in (ORIGINAL, Curve(.5, 1.8, 4)):
+            with self.subTest(curve=restored):
+                self.backend.apply(restored, expected=self.backend.read())
+                current = self.backend.apply(CHANGED, expected=self.backend.read()).snapshot
+                undo = self.backend._file("tuner-undo.json")
+                self.desktop.mapping(deleted=True)
+                calls = len(self.desktop.calls)
+                with self.assertRaisesRegex(BackendError, "Sign out and back in once"):
+                    self.backend.undo(expected=current)
+                self.assertEqual(self.backend.read(), current)
+                self.assertEqual(self.backend._file("tuner-undo.json"), undo)
+                self.assertFalse(any(c[:2] == ["gsettings", "set"] for c in self.desktop.calls[calls:]))
+                self.desktop.mapping()
+                result = self.backend.undo(expected=current)
+                self.assertEqual(result.snapshot.curve, restored)
+                self.assertEqual(result.status, "active")
+
+    def test_status_rejects_old_formula_or_wrong_hash_despite_matching_log(self):
+        self.desktop.log_curve()
+        self.assertEqual(self.backend.status().status, "active")
+        path = self.base / "support.json"
         digest = hashlib.sha256((self.base / "libmacbook-trackpad.so").read_bytes()).hexdigest()
-        expanded = Curve(.5, 1.8, 4)
-        with patch.object(self.backend, "_support_hash", return_value=digest):
-            self.backend.apply(expanded, expected=self.backend.read())
-            current = self.backend.apply(CHANGED, expected=self.backend.read()).snapshot
-            undo = (self.base / "tuner-undo.json").read_bytes()
-            self.desktop.mapping(deleted=True)
-            calls = len(self.desktop.calls)
-            with self.assertRaisesRegex(BackendError, "Sign out and back in once"):
-                self.backend.undo(expected=current)
-            self.assertEqual(self.backend.read(), current)
-            self.assertEqual((self.base / "tuner-undo.json").read_bytes(), undo)
-            self.assertFalse(any(c[:2] == ["gsettings", "set"] for c in self.desktop.calls[calls:]))
-            self.desktop.mapping()
-            result = self.backend.undo(expected=current)
-        self.assertEqual(result.snapshot.curve, expanded)
-        self.assertEqual(result.status, "active")
+        for record in ({"curve_version": 2, "sha256": digest},
+                       {"curve_version": 3, "sha256": "0" * 64}):
+            with self.subTest(record=record):
+                path.write_text(json.dumps(record))
+                self.assertEqual(self.backend.status().status, "sign_out_required")
 
     def test_expanded_apply_rejects_changing_desktop_process(self):
         digest = hashlib.sha256((self.base / "libmacbook-trackpad.so").read_bytes()).hexdigest()

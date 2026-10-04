@@ -1,5 +1,6 @@
 """Installer lifecycle tests; no real desktop, compiler or home directory."""
 import importlib.util
+import io
 import json
 from pathlib import Path
 import tempfile
@@ -61,13 +62,35 @@ class InstallerTests(unittest.TestCase):
         data = b'0.57 3.1\n'
         (base / 'curve.conf').write_bytes(data)
         (base / 'tuner-undo.json').write_bytes(b'preserve this undo')
+        protected = {name: ((base / name).read_bytes(), (base / name).stat())
+                     for name in ('curve.conf', 'medium.conf', 'tuner-baseline.json', 'tuner-undo.json')}
+        # Represent an owned v2 installation, including its recorded hash.
+        support = base / 'support.json'
+        previous_support = json.loads(support.read_text())
+        previous_support['curve_version'] = 2
+        support.write_text(json.dumps(previous_support))
+        previous_record = installer.read_record()
+        previous_record['files'][str(support)] = installer.digest(support.read_bytes())
+        (base / 'install.json').write_text(json.dumps(previous_record))
         previous_inode = (base / 'libmacbook-trackpad.so').stat().st_ino
-        installer.install()
+        self.commands.clear()
+        with patch('sys.stdout', new_callable=io.StringIO) as output:
+            installer.install()
+        self.assertIn('sign out and back in before applying any curve changes', output.getvalue())
         self.assertNotEqual(previous_inode, (base / 'libmacbook-trackpad.so').stat().st_ino)
-        self.assertEqual((base / 'curve.conf').read_bytes(), data)
-        self.assertEqual((base / 'tuner-undo.json').read_bytes(), b'preserve this undo')
+        for name, (contents, stat) in protected.items():
+            with self.subTest(file=name):
+                self.assertEqual((base / name).read_bytes(), contents)
+                current = (base / name).stat()
+                self.assertEqual((current.st_ino, current.st_mtime_ns, current.st_ctime_ns),
+                                 (stat.st_ino, stat.st_mtime_ns, stat.st_ctime_ns))
+        self.assertFalse(any(command[:2] == ['gsettings', 'set'] for command in self.commands))
+        self.assertFalse(any('logout' in command or 'reboot' in command for command in self.commands))
         record = json.loads((base / 'support.json').read_text())
+        self.assertEqual(record['curve_version'], 3)
         self.assertEqual(record['sha256'], installer.digest((base / 'libmacbook-trackpad.so').read_bytes()))
+        installer.verify_owned(installer.read_record())
+        self.assertEqual(installer.read_record()['original_settings'], previous_record['original_settings'])
         installer.uninstall()
         self.assertEqual(self.profile, "'default'")
         self.assertEqual(self.speed, '0.42')

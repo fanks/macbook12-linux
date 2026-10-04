@@ -60,6 +60,45 @@ class Curve:
         return self
 
 
+CURVE_SPEEDS = (10., 100., 400., 520.)
+
+
+def _spline(c: Curve) -> tuple[tuple[float, ...], tuple[float, ...]]:
+    """Monotone Hermite gain, with PCHIP interior slopes and flat ends.
+
+    Preserve the three editor handles and the old maximum gain. Ordered
+    anchors and harmonic slopes prevent overshoot throughout the slider range.
+    Zero endpoint slopes join the precision region and capped tail smoothly.
+    Keep the operation order identical to curve.c for sample agreement.
+    """
+    values = (c.slow, .9 * c.medium, (387. / 130.) * c.fast, 4.8 * c.fast)
+    widths = tuple(b - a for a, b in zip(CURVE_SPEEDS, CURVE_SPEEDS[1:]))
+    secants = tuple((b - a) / h for a, b, h in zip(values, values[1:], widths))
+    slopes = [0.] * 4
+    for i in (1, 2):
+        left, right = secants[i - 1], secants[i]
+        if left > 0 and right > 0:
+            w1 = 2. * widths[i] + widths[i - 1]
+            w2 = widths[i] + 2. * widths[i - 1]
+            slopes[i] = (w1 + w2) / (w1 / left + w2 / right)
+    return values, tuple(slopes)
+
+
+def _factor(v: float, values: tuple[float, ...], slopes: tuple[float, ...]) -> float:
+    if v <= CURVE_SPEEDS[0]:
+        return values[0]
+    if v >= CURVE_SPEEDS[-1]:
+        return values[-1]
+    i = 0 if v < CURVE_SPEEDS[1] else 1 if v < CURVE_SPEEDS[2] else 2
+    h = CURVE_SPEEDS[i + 1] - CURVE_SPEEDS[i]
+    t = (v - CURVE_SPEEDS[i]) / h
+    delta = values[i + 1] - values[i]
+    left, right = h * slopes[i], h * slopes[i + 1]
+    value = values[i] + t * (left + t * (3. * delta - 2. * left - right + t * (left + right - 2. * delta)))
+    # Bound only floating-point roundoff at the ends of an interval.
+    return max(values[i], min(values[i + 1], value))
+
+
 def _points(c: Curve) -> tuple[tuple[float, float], ...]:
     """Exactly the 64 C samples; x=mm/s, y=output device counts/ms.
 
@@ -68,27 +107,10 @@ def _points(c: Curve) -> tuple[tuple[float, float], ...]:
     """
     points = []
     base = .2968 * 1000. / DPI
+    values, slopes = _spline(c)
     for i in range(64):
         v = i * 10.
-        if v <= 10:
-            factor = c.slow
-        elif v < 30:
-            factor = c.slow + (.9 - c.slow) * (v - 10) / 20
-        else:
-            capped = min(v, 520.)
-            factor = .9 if capped < 130 else .0025 * (capped / 130) * (capped - 130) + .9
-            t = max(0., min(1., (v - 100) / 160))
-            factor *= 1 + (c.fast - 1) * t * t * (3 - 2 * t)
-        weight = 0.
-        if 30 < v < 60:
-            t = (v - 30) / 30
-            weight = t * t * (3 - 2 * t)
-        elif 60 <= v <= 160:
-            weight = 1.
-        elif 160 < v < 260:
-            t = (v - 160) / 100
-            weight = 1 - t * t * (3 - 2 * t)
-        factor *= 1 + (c.medium - 1) * weight
+        factor = _factor(v, values, slopes)
         output = (v * DPI / 25400.) * base * factor
         if not math.isfinite(output) or not 0 <= output <= 10000 or (points and output < points[-1][1]):
             raise BackendError("The curve must increase without backward steps.")
@@ -178,25 +200,24 @@ class Backend:
         return pid, loaded
 
     def _require_curve_support(self, curve: Curve) -> None:
-        # Existing values remain usable while the new library awaits login.
-        if curve.medium <= 1.5 and curve.fast <= 2.:
-            return
+        # Every setting uses the new formula. Do not send its preview values to
+        # an older library, even when they fit that library's slider ranges.
         try:
             expected_hash = self._support_hash()
             if expected_hash is None:
-                raise BackendError("The expanded library build is not configured.")
+                raise BackendError("The smooth curve library build is not configured.")
             _, loaded = self._loaded_library(expected_hash)
         except Exception:
             loaded = False
         if not loaded:
-            raise BackendError("Sign out and back in once to enable the higher medium and fast limits. Nothing was changed.")
+            raise BackendError("Sign out and back in once to activate the smooth curve support before applying changes. Nothing was changed.")
 
     def _support_hash(self) -> str | None:
         """The installer records each user's locally compiled library identity."""
         try:
             record = json.loads(self._file("support.json").data or b"{}")
             value = record["sha256"]
-            if record["curve_version"] == 2 and isinstance(value, str) and len(value) == 64 and all(c in "0123456789abcdef" for c in value):
+            if record["curve_version"] == 3 and isinstance(value, str) and len(value) == 64 and all(c in "0123456789abcdef" for c in value):
                 return value
         except (BackendError, KeyError, ValueError, TypeError):
             pass
@@ -473,18 +494,21 @@ class Backend:
             raise BackendError("The installation baseline is missing or unreadable.") from exc
 
     def status(self, curve: Curve | None = None, *, since_us: int = 0) -> Status:
-        """Require current process + current library inode + a matching log.
+        """Require current formula + library hash/inode + a matching log.
 
         A loaded library alone cannot prove that this curve is active. For
         apply(), only log messages after the transaction began are accepted.
         """
         try:
             curve = curve or self.read().curve
-            if curve is None:
+            if curve is None or (self.base / "disabled").exists():
                 return Status("unverified", "The custom curve is disabled.")
-            pid_text, loaded = self._loaded_library()
+            expected_hash = self._support_hash()
+            if expected_hash is None:
+                return Status("sign_out_required", "Smooth curve support is not ready. Install the latest version, then sign out and back in.")
+            pid_text, loaded = self._loaded_library(expected_hash)
             if not loaded:
-                return Status("sign_out_required", "Saved. Sign out and back in to activate curve support.")
+                return Status("sign_out_required", "Saved. Sign out and back in to activate the smooth curve support.")
             if self._settings()["accel-profile"] != "'adaptive'":
                 return Status("unverified", "Saved, but the desktop is not using the custom profile.")
             expected = f"macbook-trackpad: custom curve applied (slow={curve.slow:.2f}, fast={curve.fast:.2f}, medium={curve.medium:.2f})"
