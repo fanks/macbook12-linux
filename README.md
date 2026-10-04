@@ -2,7 +2,7 @@
 
 Simple setup guides and reversible fixes for the **2017 12-inch MacBook (`MacBook10,1`) running Debian 13 with GNOME**.
 
-Get the speakers, Bluetooth and suspend working, use familiar macOS Command-key combinations on Linux, and tune the trackpad to feel more like macOS (OS X). Cmd-Space opens GNOME search using the same shortcut as Spotlight on a Mac.
+The 12-inch MacBook has a lovely Retina screen and a compact, lightweight form factor that’s a pleasure to carry around. But the 2017 model cannot run [current macOS releases](https://support.apple.com/en-us/105113), and its last officially supported version, [Ventura](https://support.apple.com/en-us/102861), has had no [listed update](https://support.apple.com/en-us/109033) since [August 2025](https://support.apple.com/en-us/124929). Debian gives it a [supported system with security updates](https://www.debian.org/releases/trixie/) and modern software, while this guide helps its speakers, sleep, Mac-style shortcuts and trackpad work together.
 
 These fixes were developed and tested on that model. The 2015 (`MacBook8,1`) and 2016 (`MacBook9,1`) models are **not yet supported by these installers**. This repository is not for MacBook Air or MacBook Pro.
 
